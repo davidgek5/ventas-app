@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Acceso Admin{% endblock %}
+{% block content %}
+<div class="card" style="max-width:360px; margin: 40px auto;">
+  <h1>Panel del Administrador</h1>
+  <form method="post">
+    <div class="field">
+      <label for="password">Contraseña</label>
+      <input type="password" id="password" name="password" required autofocus>
+    </div>
+    <button type="submit">Entrar</button>
+  </form>
+</div>
+{% endblock %}

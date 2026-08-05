@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Panel Admin{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Panel del Administrador</h1>
+  <p class="muted">Rendimiento por local y comparación con el mes anterior.</p>
+  <div class="grid" id="resumen-cards"></div>
+</div>
+
+<div class="card">
+  <h2>Rendimiento diario por local (mes actual)</h2>
+  <canvas id="chartRendimiento" height="100"></canvas>
+</div>
+
+<div class="card">
+  <h2>Comparación con el mes anterior</h2>
+  <canvas id="chartComparacion" height="100"></canvas>
+</div>
+
+<div class="card">
+  <h2>Registros ingresados</h2>
+  <table>
+    <thead><tr><th>Local</th><th>Fecha</th><th>Total</th></tr></thead>
+    <tbody>
+      {% for r in registros %}
+      <tr><td>{{ r.local }}</td><td>{{ r.fecha }}</td><td>${{ "%.2f"|format(r.monto) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not registros %}
+  <p class="muted">Aún no hay ventas registradas.</p>
+  {% endif %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+const COLORS = ["#2f6feb", "#e0672c", "#16a34a", "#9333ea", "#dc2626"];
+
+fetch("{{ url_for('api_resumen') }}")
+  .then(r => r.json())
+  .then(data => {
+    const locales = Object.keys(data);
+
+    // Tarjetas resumen
+    const cardsEl = document.getElementById("resumen-cards");
+    locales.forEach((local, i) => {
+      const d = data[local];
+      const diff = d.total_anterior > 0
+        ? (((d.total_actual - d.total_anterior) / d.total_anterior) * 100).toFixed(1)
+        : (d.total_actual > 0 ? "100.0" : "0.0");
+      const sign = diff >= 0 ? "+" : "";
+      const color = diff >= 0 ? "#16a34a" : "#dc2626";
+      cardsEl.innerHTML += `
+        <div style="border:1px solid #e3e5ea; border-radius:10px; padding:16px;">
+          <div style="font-weight:600; margin-bottom:6px;">${local}</div>
+          <div style="font-size:1.4rem; font-weight:700;">$${d.total_actual.toFixed(2)}</div>
+          <div class="muted">Mes anterior: $${d.total_anterior.toFixed(2)}</div>
+          <div style="color:${color}; font-weight:600; margin-top:4px;">${sign}${diff}%</div>
+        </div>`;
+    });
+
+    // Gráfica de rendimiento diario (líneas por local)
+    const allDates = new Set();
+    locales.forEach(l => data[l].serie.forEach(p => allDates.add(p.fecha)));
+    const sortedDates = Array.from(allDates).sort();
+
+    const datasets = locales.map((local, i) => {
+      const map = Object.fromEntries(data[local].serie.map(p => [p.fecha, p.monto]));
+      return {
+        label: local,
+        data: sortedDates.map(f => map[f] ?? null),
+        borderColor: COLORS[i % COLORS.length],
+        backgroundColor: COLORS[i % COLORS.length],
+        spanGaps: true,
+        tension: 0.25,
+      };
+    });
+
+    new Chart(document.getElementById("chartRendimiento"), {
+      type: "line",
+      data: { labels: sortedDates, datasets },
+      options: { responsive: true, interaction: { mode: "index", intersect: false } }
+    });
+
+    // Gráfica de comparación mes actual vs anterior
+    new Chart(document.getElementById("chartComparacion"), {
+      type: "bar",
+      data: {
+        labels: locales,
+        datasets: [
+          {
+            label: "Mes anterior",
+            data: locales.map(l => data[l].total_anterior),
+            backgroundColor: "#c7ccd6",
+          },
+          {
+            label: "Mes actual",
+            data: locales.map(l => data[l].total_actual),
+            backgroundColor: "#2f6feb",
+          },
+        ]
+      },
+      options: { responsive: true }
+    });
+  });
+</script>
+{% endblock %}

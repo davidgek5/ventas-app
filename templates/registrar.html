@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Registrar venta - {{ local }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Registrar venta diaria — {{ local }}</h1>
+  <form method="post">
+    <div class="field">
+      <label for="fecha">Fecha</label>
+      <input type="date" id="fecha" name="fecha" value="{{ hoy }}" required>
+    </div>
+    <div class="field">
+      <label for="monto">Total de ventas del día</label>
+      <input type="text" id="monto" name="monto" placeholder="0.00" inputmode="decimal" required>
+    </div>
+    <button type="submit">Guardar venta</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Últimos registros de {{ local }}</h2>
+  {% if ultimos %}
+  <table>
+    <thead><tr><th>Fecha</th><th>Total</th></tr></thead>
+    <tbody>
+      {% for r in ultimos %}
+      <tr><td>{{ r.fecha }}</td><td>${{ "%.2f"|format(r.monto) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Todavía no hay registros para este local.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Mi rendimiento</h2>
+  <div id="resumen-local" class="muted" style="margin-bottom:16px;">Cargando...</div>
+  <canvas id="chartLocal" height="120"></canvas>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+fetch("{{ url_for('api_serie_local', local=local) }}")
+  .then(r => r.json())
+  .then(d => {
+    const resumenEl = document.getElementById("resumen-local");
+    const diff = d.total_anterior > 0
+      ? (((d.total_actual - d.total_anterior) / d.total_anterior) * 100).toFixed(1)
+      : (d.total_actual > 0 ? "100.0" : "0.0");
+    const sign = diff >= 0 ? "+" : "";
+    const color = diff >= 0 ? "#16a34a" : "#dc2626";
+    resumenEl.innerHTML = `Total este mes: <strong>$${d.total_actual.toFixed(2)}</strong> &nbsp;·&nbsp; Mes anterior: <strong>$${d.total_anterior.toFixed(2)}</strong> &nbsp;·&nbsp; <span style="color:${color}; font-weight:700;">${sign}${diff}%</span>`;
+
+    const fechas = d.serie.map(p => p.fecha);
+    const montos = d.serie.map(p => p.monto);
+
+    new Chart(document.getElementById("chartLocal"), {
+      type: "line",
+      data: {
+        labels: fechas,
+        datasets: [{
+          label: "Ventas diarias",
+          data: montos,
+          borderColor: "#2f6feb",
+          backgroundColor: "#2f6feb",
+          tension: 0.25,
+          fill: false,
+        }]
+      },
+      options: { responsive: true }
+    });
+  });
+</script>
+{% endblock %}

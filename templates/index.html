@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Selecciona un local{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Selecciona tu local</h1>
+  <p class="muted">Elige el local para registrar la venta del día.</p>
+  <div class="locales-list">
+    {% for local in locales %}
+      <a href="{{ url_for('registrar', local=local) }}">
+        <span class="local-icon">{{ local[0] }}</span>
+        <span>{{ local }}</span>
+      </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
