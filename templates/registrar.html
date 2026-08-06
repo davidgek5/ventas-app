@@ -44,12 +44,22 @@ fetch("{{ url_for('api_serie_local', local=local) }}")
   .then(r => r.json())
   .then(d => {
     const resumenEl = document.getElementById("resumen-local");
-    const diff = d.total_anterior > 0
+    const diffMes = d.total_anterior > 0
       ? (((d.total_actual - d.total_anterior) / d.total_anterior) * 100).toFixed(1)
       : (d.total_actual > 0 ? "100.0" : "0.0");
-    const sign = diff >= 0 ? "+" : "";
-    const color = diff >= 0 ? "#16a34a" : "#dc2626";
-    resumenEl.innerHTML = `Total este mes: <strong>$${d.total_actual.toFixed(2)}</strong> &nbsp;·&nbsp; Mes anterior: <strong>$${d.total_anterior.toFixed(2)}</strong> &nbsp;·&nbsp; <span style="color:${color}; font-weight:700;">${sign}${diff}%</span>`;
+    const signMes = diffMes >= 0 ? "+" : "";
+    const colorMes = diffMes >= 0 ? "#16a34a" : "#dc2626";
+
+    const diffSemana = d.semana_anterior_total > 0
+      ? (((d.semana_actual_total - d.semana_anterior_total) / d.semana_anterior_total) * 100).toFixed(1)
+      : (d.semana_actual_total > 0 ? "100.0" : "0.0");
+    const signSemana = diffSemana >= 0 ? "+" : "";
+    const colorSemana = diffSemana >= 0 ? "#16a34a" : "#dc2626";
+
+    resumenEl.innerHTML = `
+      <div style="margin-bottom:6px;">Este mes: <strong>$${d.total_actual.toFixed(2)}</strong> &nbsp;·&nbsp; Mes anterior: <strong>$${d.total_anterior.toFixed(2)}</strong> &nbsp;·&nbsp; <span style="color:${colorMes}; font-weight:700;">${signMes}${diffMes}%</span></div>
+      <div>Esta semana: <strong>$${d.semana_actual_total.toFixed(2)}</strong> &nbsp;·&nbsp; Semana anterior: <strong>$${d.semana_anterior_total.toFixed(2)}</strong> &nbsp;·&nbsp; <span style="color:${colorSemana}; font-weight:700;">${signSemana}${diffSemana}%</span></div>
+    `;
 
     const fechas = d.serie.map(p => p.fecha);
     const montos = d.serie.map(p => p.monto);

@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
@@ -133,13 +133,37 @@ def registrar(local):
     )
 
 
-def _resumen_local(conn, local):
-    hoy = date.today()
+def _rango_mes(hoy):
     mes_actual = f"{hoy.year:04d}-{hoy.month:02d}"
     if hoy.month == 1:
         mes_anterior = f"{hoy.year - 1:04d}-12"
     else:
         mes_anterior = f"{hoy.year:04d}-{hoy.month - 1:02d}"
+    return mes_actual, mes_anterior
+
+
+def _rango_semana(hoy):
+    inicio_actual = hoy - timedelta(days=hoy.weekday())
+    fin_actual = inicio_actual + timedelta(days=6)
+    inicio_anterior = inicio_actual - timedelta(days=7)
+    fin_anterior = inicio_actual - timedelta(days=1)
+    return inicio_actual, fin_actual, inicio_anterior, fin_anterior
+
+
+def _suma_rango(conn, local, desde, hasta):
+    total = conn.execute(
+        text(
+            "SELECT COALESCE(SUM(monto), 0) AS t FROM ventas "
+            "WHERE local = :local AND fecha >= :desde AND fecha <= :hasta"
+        ),
+        {"local": local, "desde": desde, "hasta": hasta},
+    ).mappings().one()["t"]
+    return float(total)
+
+
+def _resumen_local(conn, local):
+    hoy = date.today()
+    mes_actual, mes_anterior = _rango_mes(hoy)
 
     total_actual = conn.execute(
         text("SELECT COALESCE(SUM(monto), 0) AS t FROM ventas WHERE local = :local AND fecha LIKE :mes"),
@@ -149,29 +173,38 @@ def _resumen_local(conn, local):
         text("SELECT COALESCE(SUM(monto), 0) AS t FROM ventas WHERE local = :local AND fecha LIKE :mes"),
         {"local": local, "mes": f"{mes_anterior}%"},
     ).mappings().one()["t"]
-    return mes_actual, mes_anterior, float(total_actual), float(total_anterior)
+
+    inicio_actual, fin_actual, inicio_anterior, fin_anterior = _rango_semana(hoy)
+    semana_actual_total = _suma_rango(conn, local, inicio_actual.isoformat(), fin_actual.isoformat())
+    semana_anterior_total = _suma_rango(conn, local, inicio_anterior.isoformat(), fin_anterior.isoformat())
+
+    return {
+        "mes_actual": mes_actual,
+        "mes_anterior": mes_anterior,
+        "total_actual": float(total_actual),
+        "total_anterior": float(total_anterior),
+        "semana_actual_inicio": inicio_actual.isoformat(),
+        "semana_anterior_inicio": inicio_anterior.isoformat(),
+        "semana_actual_total": semana_actual_total,
+        "semana_anterior_total": semana_anterior_total,
+    }
 
 
 @app.route("/registrar/<local>/api/serie")
 def api_serie_local(local):
-    """Historial de ventas del propio local (mes actual y anterior), sin necesitar admin."""
+    """Historial de ventas del propio local (mes y semana, actual y anterior), sin necesitar admin."""
     if local not in LOCALES:
         return jsonify({"error": "local no encontrado"}), 404
 
     with engine.connect() as conn:
-        mes_actual, mes_anterior, total_actual, total_anterior = _resumen_local(conn, local)
+        resumen = _resumen_local(conn, local)
         serie = conn.execute(
             text("SELECT fecha, monto FROM ventas WHERE local = :local ORDER BY fecha ASC LIMIT 90"),
             {"local": local},
         ).mappings().all()
 
-    return jsonify({
-        "mes_actual": mes_actual,
-        "mes_anterior": mes_anterior,
-        "total_actual": total_actual,
-        "total_anterior": total_anterior,
-        "serie": [{"fecha": r["fecha"], "monto": r["monto"]} for r in serie],
-    })
+    resumen["serie"] = [{"fecha": r["fecha"], "monto": r["monto"]} for r in serie]
+    return jsonify(resumen)
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -195,30 +228,69 @@ def admin_logout():
 def admin_panel():
     with engine.connect() as conn:
         registros = conn.execute(
-            text("SELECT local, fecha, monto FROM ventas ORDER BY fecha DESC, local ASC LIMIT 200")
+            text("SELECT id, local, fecha, monto FROM ventas ORDER BY fecha DESC, local ASC LIMIT 200")
         ).mappings().all()
     return render_template("admin.html", locales=LOCALES, registros=registros)
+
+
+@app.route("/admin/venta/<int:venta_id>/editar", methods=["GET", "POST"])
+@login_required
+def admin_editar_venta(venta_id):
+    with engine.connect() as conn:
+        venta = conn.execute(
+            text("SELECT id, local, fecha, monto FROM ventas WHERE id = :id"),
+            {"id": venta_id},
+        ).mappings().first()
+
+    if venta is None:
+        flash("Ese registro ya no existe.", "error")
+        return redirect(url_for("admin_panel"))
+
+    if request.method == "POST":
+        monto_raw = request.form.get("monto", "").replace(",", ".")
+        fecha = request.form.get("fecha") or venta["fecha"]
+        try:
+            monto = float(monto_raw)
+            if monto < 0:
+                raise ValueError
+        except ValueError:
+            flash("Ingresa un monto válido.", "error")
+            return redirect(url_for("admin_editar_venta", venta_id=venta_id))
+
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE ventas SET fecha = :fecha, monto = :monto WHERE id = :id"),
+                {"fecha": fecha, "monto": monto, "id": venta_id},
+            )
+        flash("Registro actualizado.", "success")
+        return redirect(url_for("admin_panel"))
+
+    return render_template("editar_venta.html", venta=venta)
+
+
+@app.route("/admin/venta/<int:venta_id>/eliminar", methods=["POST"])
+@login_required
+def admin_eliminar_venta(venta_id):
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM ventas WHERE id = :id"), {"id": venta_id})
+    flash("Registro eliminado.", "success")
+    return redirect(url_for("admin_panel"))
 
 
 @app.route("/admin/api/resumen")
 @login_required
 def api_resumen():
-    """Totales por local del mes actual y el anterior, más serie diaria del mes actual."""
+    """Totales por local: mes actual/anterior, semana actual/anterior, más serie diaria del mes actual."""
     data = {}
     with engine.connect() as conn:
         for local in LOCALES:
-            mes_actual, mes_anterior, total_actual, total_anterior = _resumen_local(conn, local)
+            resumen = _resumen_local(conn, local)
             serie = conn.execute(
                 text("SELECT fecha, monto FROM ventas WHERE local = :local AND fecha LIKE :mes ORDER BY fecha ASC"),
-                {"local": local, "mes": f"{mes_actual}%"},
+                {"local": local, "mes": f"{resumen['mes_actual']}%"},
             ).mappings().all()
-            data[local] = {
-                "mes_actual": mes_actual,
-                "mes_anterior": mes_anterior,
-                "total_actual": total_actual,
-                "total_anterior": total_anterior,
-                "serie": [{"fecha": r["fecha"], "monto": r["monto"]} for r in serie],
-            }
+            resumen["serie"] = [{"fecha": r["fecha"], "monto": r["monto"]} for r in serie]
+            data[local] = resumen
     return jsonify(data)
 
 

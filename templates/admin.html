@@ -18,12 +18,28 @@
 </div>
 
 <div class="card">
+  <h2>Comparación con la semana anterior</h2>
+  <canvas id="chartSemana" height="100"></canvas>
+</div>
+
+<div class="card">
   <h2>Registros ingresados</h2>
   <table>
-    <thead><tr><th>Local</th><th>Fecha</th><th>Total</th></tr></thead>
+    <thead><tr><th>Local</th><th>Fecha</th><th>Total</th><th></th></tr></thead>
     <tbody>
       {% for r in registros %}
-      <tr><td>{{ r.local }}</td><td>{{ r.fecha }}</td><td>${{ "%.2f"|format(r.monto) }}</td></tr>
+      <tr>
+        <td>{{ r.local }}</td>
+        <td>{{ r.fecha }}</td>
+        <td>${{ "%.2f"|format(r.monto) }}</td>
+        <td style="white-space:nowrap;">
+          <a href="{{ url_for('admin_editar_venta', venta_id=r.id) }}">Editar</a>
+          &nbsp;·&nbsp;
+          <form method="post" action="{{ url_for('admin_eliminar_venta', venta_id=r.id) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar este registro?');">
+            <button type="submit" style="background:none; border:none; color:var(--error); font-weight:600; cursor:pointer; padding:0;">Eliminar</button>
+          </form>
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
@@ -97,6 +113,27 @@ fetch("{{ url_for('api_resumen') }}")
             label: "Mes actual",
             data: locales.map(l => data[l].total_actual),
             backgroundColor: "#2f6feb",
+          },
+        ]
+      },
+      options: { responsive: true }
+    });
+
+    // Gráfica de comparación semana actual vs anterior
+    new Chart(document.getElementById("chartSemana"), {
+      type: "bar",
+      data: {
+        labels: locales,
+        datasets: [
+          {
+            label: "Semana anterior",
+            data: locales.map(l => data[l].semana_anterior_total),
+            backgroundColor: "#c7ccd6",
+          },
+          {
+            label: "Semana actual",
+            data: locales.map(l => data[l].semana_actual_total),
+            backgroundColor: "#e0672c",
           },
         ]
       },
