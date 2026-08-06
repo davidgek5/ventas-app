@@ -125,12 +125,63 @@ def registrar(local):
 
     with engine.connect() as conn:
         ultimos = conn.execute(
-            text("SELECT fecha, monto FROM ventas WHERE local = :local ORDER BY fecha DESC LIMIT 10"),
+            text("SELECT id, fecha, monto FROM ventas WHERE local = :local ORDER BY fecha DESC LIMIT 10"),
             {"local": local},
         ).mappings().all()
     return render_template(
         "registrar.html", local=local, hoy=date.today().isoformat(), ultimos=ultimos
     )
+
+
+@app.route("/registrar/<local>/venta/<int:venta_id>/editar", methods=["GET", "POST"])
+def registrar_editar_venta(local, venta_id):
+    if local not in LOCALES:
+        return "Local no encontrado", 404
+
+    with engine.connect() as conn:
+        venta = conn.execute(
+            text("SELECT id, local, fecha, monto FROM ventas WHERE id = :id AND local = :local"),
+            {"id": venta_id, "local": local},
+        ).mappings().first()
+
+    if venta is None:
+        flash("Ese registro ya no existe.", "error")
+        return redirect(url_for("registrar", local=local))
+
+    if request.method == "POST":
+        monto_raw = request.form.get("monto", "").replace(",", ".")
+        fecha = request.form.get("fecha") or venta["fecha"]
+        try:
+            monto = float(monto_raw)
+            if monto < 0:
+                raise ValueError
+        except ValueError:
+            flash("Ingresa un monto válido.", "error")
+            return redirect(url_for("registrar_editar_venta", local=local, venta_id=venta_id))
+
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE ventas SET fecha = :fecha, monto = :monto WHERE id = :id AND local = :local"),
+                {"fecha": fecha, "monto": monto, "id": venta_id, "local": local},
+            )
+        flash("Registro actualizado.", "success")
+        return redirect(url_for("registrar", local=local))
+
+    return render_template("editar_venta.html", venta=venta, volver=url_for("registrar", local=local))
+
+
+@app.route("/registrar/<local>/venta/<int:venta_id>/eliminar", methods=["POST"])
+def registrar_eliminar_venta(local, venta_id):
+    if local not in LOCALES:
+        return "Local no encontrado", 404
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM ventas WHERE id = :id AND local = :local"),
+            {"id": venta_id, "local": local},
+        )
+    flash("Registro eliminado.", "success")
+    return redirect(url_for("registrar", local=local))
 
 
 def _rango_mes(hoy):
@@ -265,7 +316,7 @@ def admin_editar_venta(venta_id):
         flash("Registro actualizado.", "success")
         return redirect(url_for("admin_panel"))
 
-    return render_template("editar_venta.html", venta=venta)
+    return render_template("editar_venta.html", venta=venta, volver=url_for("admin_panel"))
 
 
 @app.route("/admin/venta/<int:venta_id>/eliminar", methods=["POST"])

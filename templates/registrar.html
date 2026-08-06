@@ -20,10 +20,20 @@
   <h2>Últimos registros de {{ local }}</h2>
   {% if ultimos %}
   <table>
-    <thead><tr><th>Fecha</th><th>Total</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Total</th><th></th></tr></thead>
     <tbody>
       {% for r in ultimos %}
-      <tr><td>{{ r.fecha }}</td><td>${{ "%.2f"|format(r.monto) }}</td></tr>
+      <tr>
+        <td>{{ r.fecha }}</td>
+        <td>${{ "%.2f"|format(r.monto) }}</td>
+        <td style="white-space:nowrap;">
+          <a href="{{ url_for('registrar_editar_venta', local=local, venta_id=r.id) }}">Editar</a>
+          &nbsp;·&nbsp;
+          <form method="post" action="{{ url_for('registrar_eliminar_venta', local=local, venta_id=r.id) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar este registro?');">
+            <button type="submit" style="background:none; border:none; color:var(--error); font-weight:600; cursor:pointer; padding:0;">Eliminar</button>
+          </form>
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
@@ -38,8 +48,20 @@
   <canvas id="chartLocal" height="120"></canvas>
 </div>
 
+<div class="card">
+  <h2>Comparación con el mes anterior</h2>
+  <canvas id="chartMes" height="100"></canvas>
+</div>
+
+<div class="card">
+  <h2>Comparación con la semana anterior</h2>
+  <canvas id="chartSemana" height="100"></canvas>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
+const localName = {{ local | tojson }};
+
 fetch("{{ url_for('api_serie_local', local=local) }}")
   .then(r => r.json())
   .then(d => {
@@ -69,13 +91,37 @@ fetch("{{ url_for('api_serie_local', local=local) }}")
       data: {
         labels: fechas,
         datasets: [{
-          label: "Ventas diarias",
+          label: "Ventas diarias (mes actual)",
           data: montos,
           borderColor: "#2f6feb",
           backgroundColor: "#2f6feb",
           tension: 0.25,
           fill: false,
         }]
+      },
+      options: { responsive: true }
+    });
+
+    new Chart(document.getElementById("chartMes"), {
+      type: "bar",
+      data: {
+        labels: [localName],
+        datasets: [
+          { label: "Mes anterior", data: [d.total_anterior], backgroundColor: "#c7ccd6" },
+          { label: "Mes actual", data: [d.total_actual], backgroundColor: "#2f6feb" },
+        ]
+      },
+      options: { responsive: true }
+    });
+
+    new Chart(document.getElementById("chartSemana"), {
+      type: "bar",
+      data: {
+        labels: [localName],
+        datasets: [
+          { label: "Semana anterior", data: [d.semana_anterior_total], backgroundColor: "#c7ccd6" },
+          { label: "Semana actual", data: [d.semana_actual_total], backgroundColor: "#e0672c" },
+        ]
       },
       options: { responsive: true }
     });
